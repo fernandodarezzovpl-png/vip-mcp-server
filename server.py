@@ -1,10 +1,15 @@
 import os
+import contextlib
+from urllib.parse import urlparse
+
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse
-from fastapi import FastAPI, HTTPException
 
-app = FastAPI(title="VIP Fetch API")
+from starlette.applications import Starlette
+from starlette.routing import Mount
+from starlette.middleware.cors import CORSMiddleware
+
+from mcp.server.fastmcp import FastMCP
 
 ALLOWED_DOMAINS = [
     "vipleiloes.com.br",
@@ -17,14 +22,14 @@ def is_allowed(url: str) -> bool:
     host = (parsed.netloc or "").lower()
     return any(host == d or host.endswith("." + d) for d in ALLOWED_DOMAINS)
 
-@app.get("/")
-def health():
-    return {"ok": True, "service": "VIP Fetch API"}
+# MCP server (stateless + JSON é o recomendado pra produção)
+mcp = FastMCP("VIP Leilões MCP", stateless_http=True, json_response=True)
 
-@app.get("/fetch")
-def fetch_page(url: str):
+@mcp.tool()
+def vip_fetch(url: str) -> dict:
+    """Busca conteúdo (texto) de páginas públicas do grupo VIP Leilões."""
     if not is_allowed(url):
-        raise HTTPException(status_code=403, detail="URL não permitida")
+        return {"error": "URL não permitida. Use apenas domínios do grupo VIP Leilões."}
 
     resp = requests.get(
         url,
@@ -37,7 +42,28 @@ def fetch_page(url: str):
     text = soup.get_text(separator="\n")
     return {"content": text[:15000]}
 
+@contextlib.asynccontextmanager
+async def lifespan(app: Starlette):
+    async with mcp.session_manager.run():
+        yield
+
+# Monta o MCP no app web.
+# Por padrão, Streamable HTTP fica em /mcp (não é na raiz). :contentReference[oaicite:2]{index=2}
+app = Starlette(
+    routes=[Mount("/", app=mcp.streamable_http_app())],
+    lifespan=lifespan,
+)
+
+# CORS (se o cliente for browser-based, costuma precisar expor Mcp-Session-Id) :contentReference[oaicite:3]{index=3}
+app = CORSMiddleware(
+    app,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["*"],
+    expose_headers=["Mcp-Session-Id"],
+)
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "10000"))
     import uvicorn
+    port = int(os.environ.get("PORT", "8000"))
     uvicorn.run(app, host="0.0.0.0", port=port)
