@@ -9,24 +9,30 @@ mcp = FastMCP("VIP Leilões MCP")
 ALLOWED_DOMAINS = [
     "vipleiloes.com.br",
     "leilaovip.com.br",
-    "correios.vipleiloes.com.br"
+    "correios.vipleiloes.com.br",
 ]
 
-def is_allowed(url):
+def is_allowed(url: str) -> bool:
     parsed = urlparse(url)
-    return any(domain in parsed.netloc for domain in ALLOWED_DOMAINS)
+    host = (parsed.netloc or "").lower()
+    return any(host == d or host.endswith("." + d) for d in ALLOWED_DOMAINS)
 
 @mcp.tool()
 def vip_fetch(url: str) -> str:
     if not is_allowed(url):
         return "URL não permitida."
 
-    response = requests.get(url, timeout=10)
-    soup = BeautifulSoup(response.text, "html.parser")
+    resp = requests.get(
+        url,
+        timeout=15,
+        headers={"User-Agent": "VIP-MCP-Server/1.0"},
+    )
+    resp.raise_for_status()
 
+    soup = BeautifulSoup(resp.text, "html.parser")
     text = soup.get_text(separator="\n")
     return text[:15000]
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", "8000"))
     mcp.run(transport="http", port=port)
