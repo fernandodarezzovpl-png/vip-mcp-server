@@ -64,14 +64,23 @@ async def lifespan(app: Starlette):
         yield
 
 
+async def mcp_info(request):
+    return JSONResponse({
+        "ok": True,
+        "service": "VIP MCP Server",
+        "mcp_path": "/mcp",
+        "hint": "Use a URL base do conector: https://vip-mcp-server.onrender.com/mcp"
+    })
+
 app = Starlette(
     routes=[
         Route("/", health, methods=["GET"]),
-        # AQUI é o pulo do gato: MCP fica em /mcp
-        Mount("/mcp", app=mcp.streamable_http_app()),
+        Route("/mcp", mcp_info, methods=["GET"]),         # <- garante 200 no /mcp
+        Mount("/mcp", app=mcp.streamable_http_app()),     # <- MCP de verdade fica aqui
     ],
     lifespan=lifespan,
 )
+
 
 # Evita broncas de Host header dependendo de proxy/plataforma
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
