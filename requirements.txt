@@ -1,5 +1,5 @@
-fastapi
+mcp
+starlette
 uvicorn
 requests
 beautifulsoup4
-mcp
